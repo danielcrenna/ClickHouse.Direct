@@ -18,8 +18,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ClickHouse.Direct.Types\ClickHouse.Direct.Types.csproj" />
     <ProjectReference Include="..\ClickHouse.Direct.Abstractions\ClickHouse.Direct.Abstractions.csproj" />
+    <ProjectReference Include="..\ClickHouse.Direct.Types\ClickHouse.Direct.Types.csproj" />
+    <ProjectReference Include="..\ClickHouse.Direct.Protocol\ClickHouse.Direct.Protocol.csproj" />
   </ItemGroup>
 
 </Project>
