@@ -156,7 +156,7 @@ public sealed class StringType(ISimdCapabilities simdCapabilities) : BaseClickHo
     
     private static bool IsAsciiOnlyScalar(ReadOnlySpan<byte> bytes)
     {
-        foreach (byte b in bytes)
+        foreach (var b in bytes)
         {
             if (b >= 128)
                 return false;
@@ -436,7 +436,7 @@ public sealed class StringType(ISimdCapabilities simdCapabilities) : BaseClickHo
     
     private static bool IsAsciiOnlyString(string str)
     {
-        foreach (char c in str)
+        foreach (var c in str)
         {
             if (c >= 128)
                 return false;

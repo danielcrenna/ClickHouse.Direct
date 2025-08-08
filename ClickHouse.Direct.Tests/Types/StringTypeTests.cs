@@ -252,7 +252,7 @@ public class StringTypeTests
         WriteVarint(expectedVarint, (ulong)stringLength);
         
         // Check varint matches
-        for (int i = 0; i < expectedVarint.Count; i++)
+        for (var i = 0; i < expectedVarint.Count; i++)
         {
             Assert.Equal(expectedVarint[i], result[i]);
         }
@@ -543,7 +543,7 @@ public class StringTypeTests
     private static string GenerateAsciiString(Random random, int length)
     {
         var chars = new char[length];
-        for (int i = 0; i < length; i++)
+        for (var i = 0; i < length; i++)
         {
             chars[i] = (char)('a' + random.Next(26));
         }
@@ -553,7 +553,7 @@ public class StringTypeTests
     private static string GenerateLongAsciiString(Random random, int length)
     {
         var chars = new char[length];
-        for (int i = 0; i < length; i++)
+        for (var i = 0; i < length; i++)
         {
             chars[i] = (char)('A' + random.Next(26));
         }
@@ -563,7 +563,7 @@ public class StringTypeTests
     private static string GenerateUnicodeString(Random random, int length)
     {
         var chars = new char[length];
-        for (int i = 0; i < length; i++)
+        for (var i = 0; i < length; i++)
         {
             chars[i] = (char)('あ' + random.Next(100)); // Japanese characters
         }
@@ -573,7 +573,7 @@ public class StringTypeTests
     private static string GenerateMixedString(Random random, int length)
     {
         var chars = new char[length];
-        for (int i = 0; i < length; i++)
+        for (var i = 0; i < length; i++)
         {
             chars[i] = random.Next(3) switch
             {

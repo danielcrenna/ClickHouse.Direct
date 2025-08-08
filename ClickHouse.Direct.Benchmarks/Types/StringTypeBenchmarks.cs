@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Text;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Jobs;
 using ClickHouse.Direct.Abstractions;
