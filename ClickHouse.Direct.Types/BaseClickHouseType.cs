@@ -5,7 +5,7 @@ namespace ClickHouse.Direct.Types;
 
 public abstract class BaseClickHouseType<T> : IClickHouseType, IColumnReader<T>, IColumnWriter<T>
 {
-    public abstract ClickHouseDataType DataType { get; }
+    public abstract byte ProtocolCode { get; }
     public Type ClrType => typeof(T);
     public abstract string TypeName { get; }
     public abstract bool IsFixedLength { get; }

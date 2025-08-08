@@ -2,7 +2,7 @@ namespace ClickHouse.Direct.Abstractions;
 
 public interface IClickHouseType
 {
-    ClickHouseDataType DataType { get; }
+    byte ProtocolCode { get; }
     Type ClrType { get; }
     string TypeName { get; }
     bool IsFixedLength { get; }

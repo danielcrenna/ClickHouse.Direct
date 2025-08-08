@@ -39,7 +39,7 @@ public sealed class Int32Type(ISimdCapabilities simdCapabilities) : BaseClickHou
 
     public Int32Type() : this(DefaultSimdCapabilities.Instance) { }
 
-    public override ClickHouseDataType DataType => ClickHouseDataType.Int32;
+    public override byte ProtocolCode => 0x09;
     public override string TypeName => "Int32";
     public override bool IsFixedLength => true;
     public override int FixedByteLength => sizeof(int);

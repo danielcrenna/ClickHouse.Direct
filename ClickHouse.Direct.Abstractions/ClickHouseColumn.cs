@@ -2,11 +2,11 @@ using System.Collections;
 
 namespace ClickHouse.Direct.Abstractions;
 
-public readonly struct ClickHouseColumn<T>(string name, ClickHouseDataType dataType, ReadOnlyMemory<T> data)
+public readonly struct ClickHouseColumn<T>(string name, byte protocolCode, ReadOnlyMemory<T> data)
     : IEnumerable<T>
 {
     public string Name { get; } = name ?? throw new ArgumentNullException(nameof(name));
-    public ClickHouseDataType DataType { get; } = dataType;
+    public byte ProtocolCode { get; } = protocolCode;
     public ReadOnlyMemory<T> Data { get; } = data;
     public int RowCount => Data.Length;
 

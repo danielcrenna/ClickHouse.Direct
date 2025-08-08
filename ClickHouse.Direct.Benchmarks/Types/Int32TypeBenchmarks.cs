@@ -51,11 +51,8 @@ public class Int32TypeBenchmarks
         }
         
         _scalarType = new Int32Type(ConstrainedSimdCapabilities.ScalarOnly(DefaultSimdCapabilities.Instance));
-        
         _sse2Type = new Int32Type(ConstrainedSimdCapabilities.MaxSse2(DefaultSimdCapabilities.Instance));
-        
         _avx2Type = new Int32Type(ConstrainedSimdCapabilities.MaxAvx2(DefaultSimdCapabilities.Instance));
-        
         _avx512Type = new Int32Type(DefaultSimdCapabilities.Instance);
     }
     

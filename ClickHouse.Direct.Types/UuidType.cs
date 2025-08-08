@@ -20,7 +20,7 @@ namespace ClickHouse.Direct.Types;
 /// - AVX2: Processes 2 UUIDs simultaneously (32 bytes) using 256-bit vectors  
 /// - Scalar: Fallback for single UUID or unsupported hardware
 /// </summary>
-public sealed class UuidType : BaseClickHouseType<Guid>
+public sealed class UuidType(ISimdCapabilities simdCapabilities) : BaseClickHouseType<Guid>
 {
     public static readonly UuidType Instance = new();
     
@@ -32,16 +32,11 @@ public sealed class UuidType : BaseClickHouseType<Guid>
         (byte)4, 5, 6, 7, 2, 3, 0, 1, 15, 14, 13, 12, 11, 10, 9, 8
     );
 
-    public ISimdCapabilities SimdCapabilities { get; }
+    public ISimdCapabilities SimdCapabilities { get; } = simdCapabilities ?? throw new ArgumentNullException(nameof(simdCapabilities));
 
     public UuidType() : this(DefaultSimdCapabilities.Instance) { }
-    
-    public UuidType(ISimdCapabilities simdCapabilities)
-    {
-        SimdCapabilities = simdCapabilities ?? throw new ArgumentNullException(nameof(simdCapabilities));
-    }
 
-    public override ClickHouseDataType DataType => ClickHouseDataType.UUID;
+    public override byte ProtocolCode => 0x1D;
     public override string TypeName => "UUID";
     public override bool IsFixedLength => true;
     public override int FixedByteLength => 16;

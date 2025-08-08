@@ -221,7 +221,7 @@ public class UuidTypeTests
         var typeHandler = UuidType.Instance;
 
         // Assert
-        Assert.Equal(Abstractions.ClickHouseDataType.UUID, typeHandler.DataType);
+        Assert.Equal(0x1D, typeHandler.ProtocolCode);
         Assert.Equal("UUID", typeHandler.TypeName);
         Assert.True(typeHandler.IsFixedLength);
         Assert.Equal(16, typeHandler.FixedByteLength);

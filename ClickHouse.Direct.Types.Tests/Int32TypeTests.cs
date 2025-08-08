@@ -339,7 +339,7 @@ public class Int32TypeTests
         var typeHandler = Int32Type.Instance;
 
         // Assert
-        Assert.Equal(ClickHouseDataType.Int32, typeHandler.DataType);
+        Assert.Equal(0x09, typeHandler.ProtocolCode);
         Assert.Equal("Int32", typeHandler.TypeName);
         Assert.True(typeHandler.IsFixedLength);
         Assert.Equal(4, typeHandler.FixedByteLength);
