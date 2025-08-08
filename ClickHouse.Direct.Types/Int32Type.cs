@@ -26,6 +26,15 @@ public sealed class Int32Type(ISimdCapabilities simdCapabilities) : BaseClickHou
 {
     public static readonly Int32Type Instance = new();
     
+    private static readonly Vector128<byte> ShuffleMaskSse2 = Vector128.Create(
+        (byte)3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12
+    );
+    
+    private static readonly Vector256<byte> ShuffleMaskAvx2 = Vector256.Create(
+        (byte)3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12,
+        19, 18, 17, 16, 23, 22, 21, 20, 27, 26, 25, 24, 31, 30, 29, 28
+    );
+    
     public ISimdCapabilities SimdCapabilities { get; } = simdCapabilities ?? throw new ArgumentNullException(nameof(simdCapabilities));
 
     public Int32Type() : this(DefaultSimdCapabilities.Instance) { }
@@ -189,9 +198,6 @@ public sealed class Int32Type(ISimdCapabilities simdCapabilities) : BaseClickHou
         {
             // Handle endianness conversion with SIMD
             Span<int> temp = stackalloc int[4];
-            var shuffleMask = Vector128.Create(
-                (byte)3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12
-            );
             
             fixed (byte* srcPtr = source)
             fixed (int* destPtr = destination)
@@ -203,7 +209,7 @@ public sealed class Int32Type(ISimdCapabilities simdCapabilities) : BaseClickHou
                     // Reverse bytes within each int32 for endianness
                     if (SimdCapabilities.IsSsse3Supported)
                     {
-                        vec = Ssse3.Shuffle(vec.AsByte(), shuffleMask).AsInt32();
+                        vec = Ssse3.Shuffle(vec.AsByte(), ShuffleMaskSse2).AsInt32();
                     }
                     else
                     {
@@ -248,10 +254,6 @@ public sealed class Int32Type(ISimdCapabilities simdCapabilities) : BaseClickHou
         {
             // Handle endianness conversion with SIMD
             Span<int> temp = stackalloc int[8];
-            var shuffleMask = Vector256.Create(
-                (byte)3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12,
-                3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12
-            );
             
             fixed (byte* srcPtr = source)
             fixed (int* destPtr = destination)
@@ -263,7 +265,7 @@ public sealed class Int32Type(ISimdCapabilities simdCapabilities) : BaseClickHou
                     if (SimdCapabilities.IsAvx2Supported)
                     {
                         // Reverse bytes within each int32 for endianness
-                        vec = Avx2.Shuffle(vec.AsByte(), shuffleMask).AsInt32();
+                        vec = Avx2.Shuffle(vec.AsByte(), ShuffleMaskAvx2).AsInt32();
                     }
                     else
                     {
@@ -393,9 +395,6 @@ public sealed class Int32Type(ISimdCapabilities simdCapabilities) : BaseClickHou
         {
             // Handle endianness conversion with SIMD
             Span<int> temp = stackalloc int[4];
-            var shuffleMask = Vector128.Create(
-                (byte)3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12
-            );
             
             fixed (int* srcPtr = values)
             fixed (byte* destPtr = destination)
@@ -407,7 +406,7 @@ public sealed class Int32Type(ISimdCapabilities simdCapabilities) : BaseClickHou
                     // Reverse bytes within each int32 for endianness
                     if (SimdCapabilities.IsSsse3Supported)
                     {
-                        vec = Ssse3.Shuffle(vec.AsByte(), shuffleMask).AsInt32();
+                        vec = Ssse3.Shuffle(vec.AsByte(), ShuffleMaskSse2).AsInt32();
                     }
                     else
                     {
@@ -452,10 +451,6 @@ public sealed class Int32Type(ISimdCapabilities simdCapabilities) : BaseClickHou
         {
             // Handle endianness conversion with SIMD
             Span<int> temp = stackalloc int[8];
-            var shuffleMask = Vector256.Create(
-                (byte)3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12,
-                3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12
-            );
             
             fixed (int* srcPtr = values)
             fixed (byte* destPtr = destination)
@@ -467,7 +462,7 @@ public sealed class Int32Type(ISimdCapabilities simdCapabilities) : BaseClickHou
                     if (SimdCapabilities.IsAvx2Supported)
                     {
                         // Reverse bytes within each int32 for endianness
-                        vec = Avx2.Shuffle(vec.AsByte(), shuffleMask).AsInt32();
+                        vec = Avx2.Shuffle(vec.AsByte(), ShuffleMaskAvx2).AsInt32();
                     }
                     else
                     {
