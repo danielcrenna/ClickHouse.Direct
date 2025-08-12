@@ -1,8 +1,9 @@
 using System.Buffers;
 using System.Text;
 using ClickHouse.Direct.Abstractions;
+using ClickHouse.Direct.Types;
 
-namespace ClickHouse.Direct.Types.Tests;
+namespace ClickHouse.Direct.Tests.Types;
 
 public class StringTypeTests
 {
@@ -193,7 +194,7 @@ public class StringTypeTests
         // Assert
         Assert.Equal(2, itemsRead);
         Assert.Equal(12, bytesConsumed); // 1+5+1+5 bytes
-        Assert.Equal(new[] { "Hello", "World" }, destination);
+        Assert.Equal(["Hello", "World"], destination);
     }
 
     [Fact]

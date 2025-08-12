@@ -112,7 +112,6 @@ public sealed class Int32Type(ISimdCapabilities simdCapabilities) : BaseClickHou
             {
                 destination[i] = ReadValue(ref sequence, out _);
             }
-            // sequence has already been advanced by ReadValue calls
         }
 
         return maxItems;
@@ -158,7 +157,7 @@ public sealed class Int32Type(ISimdCapabilities simdCapabilities) : BaseClickHou
         writer.Advance(totalBytes);
     }
     
-    private void ReadValuesScalar(ReadOnlySpan<byte> source, Span<int> destination)
+    private static void ReadValuesScalar(ReadOnlySpan<byte> source, Span<int> destination)
     {
         if (BitConverter.IsLittleEndian)
         {
@@ -282,17 +281,17 @@ public sealed class Int32Type(ISimdCapabilities simdCapabilities) : BaseClickHou
             }
         }
         
+        if (i >= destination.Length)
+            return;
+
         // Handle remaining elements with SSE2 or scalar
-        if (i < destination.Length)
+        if (SimdCapabilities.IsSse2Supported && destination.Length - i >= 4)
         {
-            if (SimdCapabilities.IsSse2Supported && destination.Length - i >= 4)
-            {
-                ReadValuesSse2(source[(i * sizeof(int))..], destination[i..]);
-            }
-            else
-            {
-                ReadValuesScalar(source[(i * sizeof(int))..], destination[i..]);
-            }
+            ReadValuesSse2(source[(i * sizeof(int))..], destination[i..]);
+        }
+        else
+        {
+            ReadValuesScalar(source[(i * sizeof(int))..], destination[i..]);
         }
     }
     

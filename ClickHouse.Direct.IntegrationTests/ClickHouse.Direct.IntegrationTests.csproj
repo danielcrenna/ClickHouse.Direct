@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFrameworks>net9.0</TargetFrameworks>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
@@ -18,7 +18,8 @@
   <ItemGroup>
     <ProjectReference Include="..\ClickHouse.Direct.Abstractions\ClickHouse.Direct.Abstractions.csproj" />
     <ProjectReference Include="..\ClickHouse.Direct.Types\ClickHouse.Direct.Types.csproj" />
-    <ProjectReference Include="..\ClickHouse.Direct.Protocol\ClickHouse.Direct.Protocol.csproj" />
+    <ProjectReference Include="..\ClickHouse.Direct.Formats\ClickHouse.Direct.Formats.csproj" />
+    <ProjectReference Include="..\ClickHouse.Direct.Transports\ClickHouse.Direct.Transports.csproj" />
   </ItemGroup>
 
   <ItemGroup>

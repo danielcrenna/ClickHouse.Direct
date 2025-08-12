@@ -6,89 +6,90 @@ namespace ClickHouse.Direct.Types;
 /// <summary>
 /// Central registry of all ClickHouse data types with protocol code mapping.
 /// Provides single source of truth for type instances and protocol code resolution.
+///
+/// <see href="https://github.com/ClickHouse/ClickHouse/blob/master/docs/en/sql-reference/data-types/data-types-binary-encoding.md" />
 /// </summary>
 public static class ClickHouseTypes
 {
-    // Core type instances
+    // Signed integer type instances
+    public static readonly Int8Type Int8 = Int8Type.Instance;
+    public static readonly Int16Type Int16 = Int16Type.Instance;
     public static readonly Int32Type Int32 = Int32Type.Instance;
+    public static readonly Int64Type Int64 = Int64Type.Instance;
+    
+    // Unsigned integer type instances
+    public static readonly UInt8Type UInt8 = UInt8Type.Instance;
+    public static readonly UInt16Type UInt16 = UInt16Type.Instance;
+    public static readonly UInt32Type UInt32 = UInt32Type.Instance;
+    public static readonly UInt64Type UInt64 = UInt64Type.Instance;
+    
+    // String type instances
     public static readonly StringType String = StringType.Instance;
-    public static readonly UuidType UUID = UuidType.Instance;
+    
+    // UUID type instances
+    public static readonly UuidType Uuid = UuidType.Instance;
+    
+    // Floating-point type instances
+    public static readonly Float32Type Float32 = Float32Type.Instance;
+    public static readonly Float64Type Float64 = Float64Type.Instance;
+    
+    // Date/Time type instances
+    public static readonly DateType Date = DateType.Instance;
+    public static readonly Date32Type Date32 = Date32Type.Instance;
+    public static readonly DateTimeType DateTime = DateTimeType.Instance;
+    public static readonly DateTime64Type DateTime64 = DateTime64Type.Instance;
+    
+    // Boolean type instance (alias for UInt8)
+    public static readonly BoolType Bool = BoolType.Instance;
+    
+    // IP address type instances
+    public static readonly IPv4Type IPv4 = IPv4Type.Instance;
+    public static readonly IPv6Type IPv6 = IPv6Type.Instance;
+    
+    // Decimal type instances
+    public static readonly Decimal32Type Decimal32 = Decimal32Type.Instance;
+    public static readonly Decimal64Type Decimal64 = Decimal64Type.Instance;
+    public static readonly Decimal128Type Decimal128 = Decimal128Type.Instance;
 
     // Protocol code to type mapping for fast lookup
-    private static readonly FrozenDictionary<byte, IClickHouseType> _byProtocolCode = 
+    private static readonly FrozenDictionary<byte, IClickHouseType> ByProtocolCode = 
         new Dictionary<byte, IClickHouseType>
         {
-            [Int32.ProtocolCode] = Int32,
-            [String.ProtocolCode] = String,
-            [UUID.ProtocolCode] = UUID
+            // Unsigned integers
+            [UInt8.ProtocolCode] = UInt8,     // 0x01
+            [UInt16.ProtocolCode] = UInt16,   // 0x02
+            [UInt32.ProtocolCode] = UInt32,   // 0x03
+            [UInt64.ProtocolCode] = UInt64,   // 0x04
+            
+            // Signed integers
+            [Int8.ProtocolCode] = Int8,       // 0x07
+            [Int16.ProtocolCode] = Int16,     // 0x08
+            [Int32.ProtocolCode] = Int32,     // 0x09
+            [Int64.ProtocolCode] = Int64,     // 0x0A
+            
+            // Other types
+            [String.ProtocolCode] = String,   // 0x15
+            [Uuid.ProtocolCode] = Uuid,        // 0x1D
+            
+            // Floating-point types
+            [Float32.ProtocolCode] = Float32,  // 0x43
+            [Float64.ProtocolCode] = Float64,  // 0x44
+            
+            // Date/Time types
+            [Date.ProtocolCode] = Date,        // 0x10
+            [Date32.ProtocolCode] = Date32,    // 0x1E
+            [DateTime.ProtocolCode] = DateTime,// 0x11
+            [DateTime64.ProtocolCode] = DateTime64, // 0x19
+            
+            // IP address types
+            [IPv4.ProtocolCode] = IPv4,        // 0x13
+            [IPv6.ProtocolCode] = IPv6,        // 0x14
+            
+            // Decimal types
+            [Decimal32.ProtocolCode] = Decimal32, // 0x42
+            [Decimal64.ProtocolCode] = Decimal64, // 0x17
+            [Decimal128.ProtocolCode] = Decimal128 // 0x18
+            
+            // Note: Bool uses the same protocol code as UInt8 (0x01)
         }.ToFrozenDictionary();
-
-    // Type name to type mapping for string-based lookup
-    private static readonly FrozenDictionary<string, IClickHouseType> _byTypeName =
-        new Dictionary<string, IClickHouseType>(StringComparer.OrdinalIgnoreCase)
-        {
-            [Int32.TypeName] = Int32,
-            [String.TypeName] = String,
-            [UUID.TypeName] = UUID
-        }.ToFrozenDictionary();
-
-    /// <summary>
-    /// Gets a type instance by its protocol code (as received from ClickHouse server).
-    /// </summary>
-    /// <param name="protocolCode">The protocol code byte</param>
-    /// <returns>The corresponding type instance</returns>
-    /// <exception cref="ArgumentException">If the protocol code is not supported</exception>
-    public static IClickHouseType GetByProtocolCode(byte protocolCode)
-    {
-        if (_byProtocolCode.TryGetValue(protocolCode, out var type))
-            return type;
-        
-        throw new ArgumentException($"Unsupported protocol code: 0x{protocolCode:X2}", nameof(protocolCode));
-    }
-
-    /// <summary>
-    /// Gets a type instance by its name (case-insensitive).
-    /// </summary>
-    /// <param name="typeName">The type name (e.g., "Int32", "String")</param>
-    /// <returns>The corresponding type instance</returns>
-    /// <exception cref="ArgumentException">If the type name is not supported</exception>
-    public static IClickHouseType GetByTypeName(string typeName)
-    {
-        if (_byTypeName.TryGetValue(typeName, out var type))
-            return type;
-        
-        throw new ArgumentException($"Unsupported type name: {typeName}", nameof(typeName));
-    }
-
-    /// <summary>
-    /// Tries to get a type instance by its protocol code.
-    /// </summary>
-    /// <param name="protocolCode">The protocol code byte</param>
-    /// <param name="type">The type instance if found</param>
-    /// <returns>True if the protocol code is supported</returns>
-    public static bool TryGetByProtocolCode(byte protocolCode, out IClickHouseType? type)
-    {
-        return _byProtocolCode.TryGetValue(protocolCode, out type);
-    }
-
-    /// <summary>
-    /// Tries to get a type instance by its name (case-insensitive).
-    /// </summary>
-    /// <param name="typeName">The type name</param>
-    /// <param name="type">The type instance if found</param>
-    /// <returns>True if the type name is supported</returns>
-    public static bool TryGetByTypeName(string typeName, out IClickHouseType? type)
-    {
-        return _byTypeName.TryGetValue(typeName, out type);
-    }
-
-    /// <summary>
-    /// Gets all supported protocol codes.
-    /// </summary>
-    public static IEnumerable<byte> SupportedProtocolCodes => _byProtocolCode.Keys;
-
-    /// <summary>
-    /// Gets all supported type names.
-    /// </summary>
-    public static IEnumerable<string> SupportedTypeNames => _byTypeName.Keys;
 }

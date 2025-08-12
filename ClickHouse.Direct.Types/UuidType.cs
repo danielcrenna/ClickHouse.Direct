@@ -31,6 +31,36 @@ public sealed class UuidType(ISimdCapabilities simdCapabilities) : BaseClickHous
     private static readonly Vector128<byte> ShuffleMaskFromClickHouse = Vector128.Create(
         (byte)4, 5, 6, 7, 2, 3, 0, 1, 15, 14, 13, 12, 11, 10, 9, 8
     );
+    
+    // AVX512 shuffle indices for 4 UUIDs (512 bits)
+    // Each UUID needs the same shuffle pattern but offset by 16 bytes
+    private static readonly Vector512<byte> ShuffleMask512ToClickHouse = Vector512.Create(
+        // UUID 1 (bytes 0-15)
+        (byte)6, 7, 4, 5, 0, 1, 2, 3, 15, 14, 13, 12, 11, 10, 9, 8,
+        // UUID 2 (bytes 16-31)
+        (byte)(16+6), (16+7), (16+4), (16+5), (16+0), (16+1), (16+2), (16+3), 
+        (16+15), (16+14), (16+13), (16+12), (16+11), (16+10), (16+9), (16+8),
+        // UUID 3 (bytes 32-47)
+        (byte)(32+6), (32+7), (32+4), (32+5), (32+0), (32+1), (32+2), (32+3),
+        (32+15), (32+14), (32+13), (32+12), (32+11), (32+10), (32+9), (32+8),
+        // UUID 4 (bytes 48-63)
+        (byte)(48+6), (48+7), (48+4), (48+5), (48+0), (48+1), (48+2), (48+3),
+        (48+15), (48+14), (48+13), (48+12), (48+11), (48+10), (48+9), (48+8)
+    );
+    
+    private static readonly Vector512<byte> ShuffleMask512FromClickHouse = Vector512.Create(
+        // UUID 1 (bytes 0-15)
+        (byte)4, 5, 6, 7, 2, 3, 0, 1, 15, 14, 13, 12, 11, 10, 9, 8,
+        // UUID 2 (bytes 16-31)
+        (byte)(16+4), (16+5), (16+6), (16+7), (16+2), (16+3), (16+0), (16+1),
+        (16+15), (16+14), (16+13), (16+12), (16+11), (16+10), (16+9), (16+8),
+        // UUID 3 (bytes 32-47)
+        (byte)(32+4), (32+5), (32+6), (32+7), (32+2), (32+3), (32+0), (32+1),
+        (32+15), (32+14), (32+13), (32+12), (32+11), (32+10), (32+9), (32+8),
+        // UUID 4 (bytes 48-63)
+        (byte)(48+4), (48+5), (48+6), (48+7), (48+2), (48+3), (48+0), (48+1),
+        (48+15), (48+14), (48+13), (48+12), (48+11), (48+10), (48+9), (48+8)
+    );
 
     public ISimdCapabilities SimdCapabilities { get; } = simdCapabilities ?? throw new ArgumentNullException(nameof(simdCapabilities));
 
@@ -81,7 +111,8 @@ public sealed class UuidType(ISimdCapabilities simdCapabilities) : BaseClickHous
         if (sequence.First.Length >= totalBytes)
         {
             // Fast path: all data is in first segment
-            if (SimdCapabilities.IsAvx512FSupported && maxItems >= 4)
+            if ((SimdCapabilities.IsAvx512FSupported && SimdCapabilities.IsAvx512BwSupported && maxItems >= 4) || 
+                (SimdCapabilities.IsAvx512FSupported && !SimdCapabilities.IsAvx512BwSupported && SimdCapabilities.IsSsse3Supported && maxItems >= 4))
             {
                 // AVX512 path: process 4 UUIDs at once (64 bytes)
                 ReadValuesAvx512(sequence.First.Span, destination[..maxItems]);
@@ -129,7 +160,8 @@ public sealed class UuidType(ISimdCapabilities simdCapabilities) : BaseClickHous
         var totalBytes = values.Length * itemSize;
         var span = writer.GetSpan(totalBytes);
 
-        if (SimdCapabilities.IsAvx512FSupported && values.Length >= 4)
+        if ((SimdCapabilities.IsAvx512FSupported && SimdCapabilities.IsAvx512BwSupported && values.Length >= 4) ||
+            (SimdCapabilities.IsAvx512FSupported && !SimdCapabilities.IsAvx512BwSupported && SimdCapabilities.IsSsse3Supported && values.Length >= 4))
         {
             // AVX512 path: process 4 UUIDs at once (64 bytes)
             WriteValuesAvx512(values, span);
@@ -288,9 +320,36 @@ public sealed class UuidType(ISimdCapabilities simdCapabilities) : BaseClickHous
     {
         var i = 0;
         
-        if (SimdCapabilities.IsSsse3Supported)
+        if (SimdCapabilities.IsAvx512BwSupported)
         {
-            // Process 4 UUIDs at a time (64 bytes) using AVX512 with SIMD shuffle
+            // Process 4 UUIDs at a time (64 bytes) using true AVX512 shuffle
+            Span<byte> temp = stackalloc byte[64];
+            
+            fixed (byte* sourcePtr = source)
+            fixed (byte* tempPtr = temp)
+            {
+                for (; i + 3 < destination.Length; i += 4)
+                {
+                    // Load 64 bytes (4 UUIDs)
+                    var vec = Avx512F.LoadVector512(sourcePtr + i * 16);
+                    
+                    // Shuffle all 4 UUIDs in a single 512-bit operation
+                    var shuffled = Avx512BW.Shuffle(vec, ShuffleMask512FromClickHouse);
+                    
+                    // Store the shuffled result
+                    Avx512F.Store(tempPtr, shuffled);
+                    
+                    // Create GUIDs from the shuffled bytes
+                    destination[i] = new Guid(temp.Slice(0, 16));
+                    destination[i + 1] = new Guid(temp.Slice(16, 16));
+                    destination[i + 2] = new Guid(temp.Slice(32, 16));
+                    destination[i + 3] = new Guid(temp.Slice(48, 16));
+                }
+            }
+        }
+        else if (SimdCapabilities.IsSsse3Supported)
+        {
+            // Fallback to processing with SSSE3 (but still load 512 bits if available)
             Span<byte> temp1 = stackalloc byte[16];
             Span<byte> temp2 = stackalloc byte[16];
             Span<byte> temp3 = stackalloc byte[16];
@@ -415,9 +474,36 @@ public sealed class UuidType(ISimdCapabilities simdCapabilities) : BaseClickHous
     {
         var i = 0;
         
-        if (SimdCapabilities.IsSsse3Supported)
+        if (SimdCapabilities.IsAvx512BwSupported)
         {
-            // Process 4 UUIDs at a time using AVX512 with SIMD shuffle
+            // Process 4 UUIDs at a time using true AVX512 shuffle
+            Span<byte> temp = stackalloc byte[64];
+            
+            fixed (byte* destPtr = destination)
+            fixed (byte* tempPtr = temp)
+            {
+                for (; i + 3 < values.Length; i += 4)
+                {
+                    // Get GUID bytes for all 4 UUIDs
+                    values[i].TryWriteBytes(temp.Slice(0, 16));
+                    values[i + 1].TryWriteBytes(temp.Slice(16, 16));
+                    values[i + 2].TryWriteBytes(temp.Slice(32, 16));
+                    values[i + 3].TryWriteBytes(temp.Slice(48, 16));
+                    
+                    // Load all 64 bytes
+                    var vec = Avx512F.LoadVector512(tempPtr);
+                    
+                    // Shuffle all 4 UUIDs in a single 512-bit operation
+                    var shuffled = Avx512BW.Shuffle(vec, ShuffleMask512ToClickHouse);
+                    
+                    // Store the shuffled result directly to destination
+                    Avx512F.Store(destPtr + i * 16, shuffled);
+                }
+            }
+        }
+        else if (SimdCapabilities.IsSsse3Supported)
+        {
+            // Fallback to SSSE3 processing (but still use AVX512 for final store if available)
             Span<byte> temp1 = stackalloc byte[16];
             Span<byte> temp2 = stackalloc byte[16];
             Span<byte> temp3 = stackalloc byte[16];

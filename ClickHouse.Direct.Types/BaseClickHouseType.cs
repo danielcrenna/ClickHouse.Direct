@@ -3,6 +3,9 @@ using ClickHouse.Direct.Abstractions;
 
 namespace ClickHouse.Direct.Types;
 
+/// <summary>
+/// https://github.com/ClickHouse/ClickHouse/blob/master/docs/en/sql-reference/data-types/data-types-binary-encoding.md
+/// </summary>
 public abstract class BaseClickHouseType<T> : IClickHouseType, IColumnReader<T>, IColumnWriter<T>
 {
     public abstract byte ProtocolCode { get; }

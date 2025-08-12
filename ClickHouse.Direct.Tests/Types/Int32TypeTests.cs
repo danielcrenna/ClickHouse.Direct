@@ -1,7 +1,8 @@
 using System.Buffers;
 using ClickHouse.Direct.Abstractions;
+using ClickHouse.Direct.Types;
 
-namespace ClickHouse.Direct.Types.Tests;
+namespace ClickHouse.Direct.Tests.Types;
 
 public class Int32TypeTests
 {

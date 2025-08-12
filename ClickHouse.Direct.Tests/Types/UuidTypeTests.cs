@@ -1,6 +1,7 @@
 using System.Buffers;
+using ClickHouse.Direct.Types;
 
-namespace ClickHouse.Direct.Types.Tests;
+namespace ClickHouse.Direct.Tests.Types;
 
 public class UuidTypeTests
 {

@@ -1,281 +1,253 @@
 using System.Buffers;
-using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json;
 using ClickHouse.Direct.Types;
 using Xunit.Abstractions;
 
 namespace ClickHouse.Direct.IntegrationTests.Types;
 
 [Collection("ClickHouse")]
-public class UuidTypeIntegrationTests : IClassFixture<ClickHouseContainerFixture>, IDisposable
+public class UuidTypeIntegrationTests(ClickHouseContainerFixture fixture, ITestOutputHelper output)
+    : TypeIntegrationTestBase(fixture, output)
 {
-    private readonly ClickHouseContainerFixture _fixture;
-    private readonly ITestOutputHelper _output;
-    private readonly HttpClient _httpClient;
-
-    public UuidTypeIntegrationTests(ClickHouseContainerFixture fixture, ITestOutputHelper output)
-    {
-        _fixture = fixture;
-        _output = output;
-        _httpClient = new HttpClient();
-        
-        var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{ClickHouseContainerFixture.Username}:{ClickHouseContainerFixture.Password}"));
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
-    }
-
     [Fact]
     public async Task InsertAndSelect_UsingRowBinary_ShouldRoundTrip()
     {
-        await ExecuteQuery("DROP TABLE IF EXISTS test_uuid_rowbinary");
-        await ExecuteQuery("""
-                           CREATE TABLE test_uuid_rowbinary (
-                               test_uuid UUID
-                           ) ENGINE = Memory
-                           """);
+        var tableName = GetSanitizedTableName("test_uuid_rowbinary");
+        await Transport.ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {tableName}");
+        await Transport.ExecuteNonQueryAsync($"""
+            CREATE TABLE {tableName} (
+                test_uuid UUID
+            ) ENGINE = Memory
+            """);
 
-        var testGuids = new[]
+        var testUuids = new[]
         {
-            new Guid("01234567-89AB-CDEF-0123-456789ABCDEF"),
-            new Guid("dca0e161-9503-41a1-9de2-18528bfffe88"),
             Guid.Empty,
-            new Guid("ffffffff-ffff-ffff-ffff-ffffffffffff")
+            Guid.Parse("123e4567-e89b-12d3-a456-426614174000"),
+            Guid.Parse("550e8400-e29b-41d4-a716-446655440000"),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff"),
+            Guid.Parse("00000000-0000-0000-0000-000000000001"),
+            Guid.Parse("12345678-1234-5678-9abc-def012345678")
         };
 
         var writer = new ArrayBufferWriter<byte>();
-        foreach (var guid in testGuids)
-            UuidType.Instance.WriteValue(writer, guid);
+        foreach (var uuid in testUuids)
+            UuidType.Instance.WriteValue(writer, uuid);
 
-        var binaryData = writer.WrittenSpan.ToArray();
-        
-        _output.WriteLine($"Inserting {testGuids.Length} UUIDs using RowBinary format");
-        _output.WriteLine($"Binary data length: {binaryData.Length} bytes (expected: {testGuids.Length * 16})");
-        _output.WriteLine($"Binary data (hex): {Convert.ToHexString(binaryData)}");
+        Output.WriteLine($"Inserting {testUuids.Length} UUID values using RowBinary format");
+        await SendRowBinaryDataAsync(tableName, writer.WrittenMemory);
 
-        const string insertQuery = "INSERT INTO test_uuid_rowbinary FORMAT RowBinary";
-        var insertResponse = await ExecuteBinaryQuery(insertQuery, binaryData);
-        
-        if (!insertResponse.IsSuccessStatusCode)
+        var sequence = await QueryRowBinaryDataAsync($"SELECT test_uuid FROM {tableName}");
+
+        var actualUuids = new List<Guid>();
+        for (var i = 0; i < testUuids.Length; i++)
         {
-            var error = await insertResponse.Content.ReadAsStringAsync();
-            _output.WriteLine($"Insert failed: {error}");
+            var value = UuidType.Instance.ReadValue(ref sequence, out _);
+            actualUuids.Add(value);
+            Output.WriteLine($"Read UUID: {value}");
+            Assert.Equal(testUuids[i], value);
         }
-        insertResponse.EnsureSuccessStatusCode();
 
-        const string selectQuery = "SELECT test_uuid FROM test_uuid_rowbinary ORDER BY test_uuid FORMAT RowBinary";
-        var selectResponse = await ExecuteQuery(selectQuery);
-        selectResponse.EnsureSuccessStatusCode();
-        
-        var responseBytes = await selectResponse.Content.ReadAsByteArrayAsync();
-        _output.WriteLine($"Response binary length: {responseBytes.Length} bytes");
-        _output.WriteLine($"Response binary (hex): {Convert.ToHexString(responseBytes)}");
-        
-        // Deserialize using our UuidType
-        var sequence = new ReadOnlySequence<byte>(responseBytes);
-        var results = new List<Guid>();
-        
-        while (sequence.Length >= 16)
-        {
-            var guid = UuidType.Instance.ReadValue(ref sequence, out _);
-            results.Add(guid);
-            _output.WriteLine($"Read GUID: {guid}");
-        }
-        
-        var expectedSorted = testGuids.OrderBy(g => g).ToArray();
-        var actualSorted = results.ToArray();
-        Assert.Equal(expectedSorted.Length, actualSorted.Length);
-        for (var i = 0; i < expectedSorted.Length; i++)
-            Assert.Equal(expectedSorted[i], actualSorted[i]);
-
-        _output.WriteLine($"Successfully round-tripped {results.Count} UUIDs through RowBinary format");
+        Assert.Equal(testUuids, actualUuids);
+        await Transport.ExecuteNonQueryAsync($"DROP TABLE {tableName}");
     }
-    
-    [Fact]
-    public async Task SingleUuid_RowBinaryRoundTrip_PreservesExactBytes()
-    {
-        await ExecuteQuery("DROP TABLE IF EXISTS test_single_uuid_binary");
-        await ExecuteQuery("""
-                           CREATE TABLE test_single_uuid_binary (
-                               test_uuid UUID
-                           ) ENGINE = Memory
-                           """);
 
-        var testGuid = new Guid("01234567-89AB-CDEF-0123-456789ABCDEF");
+    [Fact]
+    public async Task BulkInsert_LargeDataset_PerformanceTest()
+    {
+        var tableName = GetSanitizedTableName("test_uuid_bulk");
+        await Transport.ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {tableName}");
+        await Transport.ExecuteNonQueryAsync($"""
+            CREATE TABLE {tableName} (
+                id Int32,
+                uuid_value UUID
+            ) ENGINE = Memory
+            """);
+
+        const int recordCount = 10000;
+        var uuids = new Guid[recordCount];
         
+        for (var i = 0; i < recordCount; i++)
+            uuids[i] = Guid.NewGuid();
+
         var writer = new ArrayBufferWriter<byte>();
-        UuidType.Instance.WriteValue(writer, testGuid);
-        var ourBytes = writer.WrittenSpan.ToArray();
+        for (var i = 0; i < recordCount; i++)
+        {
+            Int32Type.Instance.WriteValue(writer, i);
+            UuidType.Instance.WriteValue(writer, uuids[i]);
+        }
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        await SendRowBinaryDataAsync(tableName, writer.WrittenMemory);
+        sw.Stop();
         
-        _output.WriteLine($"Test GUID: {testGuid}");
-        _output.WriteLine($"Our serialization: {Convert.ToHexString(ourBytes)}");
-        
-        var insertResponse = await ExecuteBinaryQuery(
-            "INSERT INTO test_single_uuid_binary FORMAT RowBinary",
-            ourBytes);
-        insertResponse.EnsureSuccessStatusCode();
-        
-        var selectResponse = await ExecuteQuery("SELECT test_uuid FROM test_single_uuid_binary FORMAT RowBinary");
-        selectResponse.EnsureSuccessStatusCode();
-        
-        var clickHouseBytes = await selectResponse.Content.ReadAsByteArrayAsync();
-        _output.WriteLine($"ClickHouse returned: {Convert.ToHexString(clickHouseBytes)}");
-        
-        Assert.Equal(ourBytes, clickHouseBytes);
-        
-        var sequence = new ReadOnlySequence<byte>(clickHouseBytes);
-        var resultGuid = UuidType.Instance.ReadValue(ref sequence, out _);
-        Assert.Equal(testGuid, resultGuid);
+        Output.WriteLine($"Inserted {recordCount} UUID records in {sw.Elapsed.TotalMilliseconds:F2}ms");
+
+        var countStr = await GetScalarValueAsync($"SELECT COUNT(*) FROM {tableName}");
+        Assert.Equal(recordCount.ToString(), countStr);
+
+        var distinctCountStr = await GetScalarValueAsync($"SELECT COUNT(DISTINCT uuid_value) FROM {tableName}");
+        Assert.Equal(recordCount.ToString(), distinctCountStr);
+
+        await Transport.ExecuteNonQueryAsync($"DROP TABLE {tableName}");
     }
 
     [Fact]
-    public async Task MixedFormat_TextInsertBinarySelect_ShouldWork()
+    public async Task SpecialUuidValues_ShouldHandleCorrectly()
     {
-        await ExecuteQuery("DROP TABLE IF EXISTS test_mixed_formats");
-        await ExecuteQuery("""
-                           CREATE TABLE test_mixed_formats (
-                               id Int32,
-                               uuid_value UUID
-                           ) ENGINE = Memory
-                           """);
+        var tableName = GetSanitizedTableName("test_special_uuids");
+        await Transport.ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {tableName}");
+        await Transport.ExecuteNonQueryAsync($"""
+            CREATE TABLE {tableName} (
+                description String,
+                uuid_value UUID
+            ) ENGINE = Memory
+            """);
+
+        var specialCases = new[]
+        {
+            ("Empty/Nil UUID", Guid.Empty),
+            ("All ones", Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff")),
+            ("Version 1 example", Guid.Parse("550e8400-e29b-11d4-a716-446655440000")),
+            ("Version 4 example", Guid.Parse("936da01f-9abd-4d9d-80c7-02af85c822a8")),
+            ("Sequential pattern", Guid.Parse("01234567-89ab-cdef-0123-456789abcdef")),
+            ("Reverse sequential", Guid.Parse("fedcba98-7654-3210-fedc-ba9876543210"))
+        };
+
+        var writer = new ArrayBufferWriter<byte>();
+        foreach (var (desc, uuid) in specialCases)
+        {
+            StringType.Instance.WriteValue(writer, desc);
+            UuidType.Instance.WriteValue(writer, uuid);
+        }
+
+        await SendRowBinaryDataAsync(tableName, writer.WrittenMemory);
+
+        var sequence = await QueryRowBinaryDataAsync($"SELECT description, uuid_value FROM {tableName} ORDER BY description");
+
+        var orderedCases = specialCases.OrderBy(x => x.Item1).ToArray();
+        for (var i = 0; i < orderedCases.Length; i++)
+        {
+            var desc = StringType.Instance.ReadValue(ref sequence, out _);
+            var uuid = UuidType.Instance.ReadValue(ref sequence, out _);
+            
+            Assert.Equal(orderedCases[i].Item1, desc);
+            Assert.Equal(orderedCases[i].Item2, uuid);
+            Output.WriteLine($"{desc}: {uuid}");
+        }
+
+        await Transport.ExecuteNonQueryAsync($"DROP TABLE {tableName}");
+    }
+
+    [Fact]
+    public async Task NullableUuid_HandlesNullsCorrectly()
+    {
+        var tableName = GetSanitizedTableName("test_nullable_uuid");
+        await Transport.ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {tableName}");
+        await Transport.ExecuteNonQueryAsync($"""
+            CREATE TABLE {tableName} (
+                id Int32,
+                nullable_uuid Nullable(UUID)
+            ) ENGINE = Memory
+            """);
 
         var testData = new[]
         {
-            (1, new Guid("12345678-90ab-cdef-1234-567890abcdef")),
-            (2, new Guid("87654321-4321-8765-cba9-cba987654321")),
-            (3, Guid.Empty),
-            (4, new Guid("ffffffff-ffff-ffff-ffff-ffffffffffff"))
+            (id: 1, uuid: Guid.NewGuid()),
+            (id: 2, uuid: null),
+            (id: 3, uuid: Guid.Empty),
+            (id: 4, uuid: null),
+            (id: 5, uuid: (Guid?)Guid.NewGuid())
         };
 
-        foreach (var (id, guid) in testData)
-            await ExecuteQuery($"INSERT INTO test_mixed_formats VALUES ({id}, '{guid}')");
-
-        // Select using RowBinary format
-        var selectResponse = await ExecuteQuery(
-            "SELECT uuid_value FROM test_mixed_formats ORDER BY id FORMAT RowBinary");
-        selectResponse.EnsureSuccessStatusCode();
-
-        var binaryData = await selectResponse.Content.ReadAsByteArrayAsync();
-        _output.WriteLine($"Selected {binaryData.Length} bytes in RowBinary format");
-
-        var sequence = new ReadOnlySequence<byte>(binaryData);
-        var results = new List<Guid>();
-
-        while (sequence.Length >= 16)
+        var writer = new ArrayBufferWriter<byte>();
+        foreach (var item in testData)
         {
-            var guid = UuidType.Instance.ReadValue(ref sequence, out _);
-            results.Add(guid);
+            Int32Type.Instance.WriteValue(writer, item.id);
+            
+            var span = writer.GetSpan(1);
+            if (item.uuid.HasValue)
+            {
+                span[0] = 0;
+                writer.Advance(1);
+                UuidType.Instance.WriteValue(writer, item.uuid.Value);
+            }
+            else
+            {
+                span[0] = 1;
+                writer.Advance(1);
+            }
         }
 
-        Assert.Equal(testData.Length, results.Count);
-        for (var i = 0; i < testData.Length; i++)
-        {
-            Assert.Equal(testData[i].Item2, results[i]);
-            _output.WriteLine($"Verified UUID {i + 1}: {results[i]}");
-        }
+        await SendRowBinaryDataAsync(tableName, writer.WrittenMemory);
+
+        var nullCountStr = await GetScalarValueAsync($"SELECT COUNT(*) FROM {tableName} WHERE nullable_uuid IS NULL");
+        Assert.Equal("2", nullCountStr);
+
+        var notNullCountStr = await GetScalarValueAsync($"SELECT COUNT(*) FROM {tableName} WHERE nullable_uuid IS NOT NULL");
+        Assert.Equal("3", notNullCountStr);
+
+        var emptyCountStr = await GetScalarValueAsync($"SELECT COUNT(*) FROM {tableName} WHERE nullable_uuid = '00000000-0000-0000-0000-000000000000'");
+        Assert.Equal("1", emptyCountStr);
+
+        await Transport.ExecuteNonQueryAsync($"DROP TABLE {tableName}");
     }
 
     [Fact]
-    public async Task MixedFormat_BinaryInsertTextSelect_ShouldWork()
+    public async Task UuidWithOtherTypes_MixedTable()
     {
-        await ExecuteQuery("DROP TABLE IF EXISTS test_binary_to_text");
-        await ExecuteQuery("""
-                           CREATE TABLE test_binary_to_text (
-                               uuid_value UUID
-                           ) ENGINE = Memory
-                           """);
+        var tableName = GetSanitizedTableName("test_mixed_with_uuid");
+        await Transport.ExecuteNonQueryAsync($"DROP TABLE IF EXISTS {tableName}");
+        await Transport.ExecuteNonQueryAsync($"""
+            CREATE TABLE {tableName} (
+                id Int32,
+                name String,
+                uuid_value UUID,
+                score Int32
+            ) ENGINE = Memory
+            """);
 
-        var testGuids = new[]
+        var testData = new[]
         {
-            new Guid("abcdef12-3456-7890-abcd-ef1234567890"),
-            new Guid("11111111-2222-3333-4444-555555555555"),
-            Guid.NewGuid()
+            (id: 1, name: "Alice", uuid: Guid.NewGuid(), score: 100),
+            (id: 2, name: "Bob", uuid: Guid.NewGuid(), score: 85),
+            (id: 3, name: "Charlie", uuid: Guid.NewGuid(), score: 92),
+            (id: 4, name: "David", uuid: Guid.NewGuid(), score: 78),
+            (id: 5, name: "Eve", uuid: Guid.NewGuid(), score: 95)
         };
 
         var writer = new ArrayBufferWriter<byte>();
-        foreach (var guid in testGuids)
-            UuidType.Instance.WriteValue(writer, guid);
+        foreach (var item in testData)
+        {
+            Int32Type.Instance.WriteValue(writer, item.id);
+            StringType.Instance.WriteValue(writer, item.name);
+            UuidType.Instance.WriteValue(writer, item.uuid);
+            Int32Type.Instance.WriteValue(writer, item.score);
+        }
 
-        var insertResponse = await ExecuteBinaryQuery("INSERT INTO test_binary_to_text FORMAT RowBinary",
-            writer.WrittenSpan.ToArray());
-        insertResponse.EnsureSuccessStatusCode();
+        await SendRowBinaryDataAsync(tableName, writer.WrittenMemory);
 
-        var selectResponse = await ExecuteQuery("SELECT uuid_value FROM test_binary_to_text FORMAT JSON");
-        selectResponse.EnsureSuccessStatusCode();
+        var countStr = await GetScalarValueAsync($"SELECT COUNT(*) FROM {tableName}");
+        Assert.Equal("5", countStr);
 
-        var jsonResult = await selectResponse.Content.ReadAsStringAsync();
-        var jsonDocument = JsonDocument.Parse(jsonResult);
-        var rows = jsonDocument.RootElement.GetProperty("data").EnumerateArray().ToArray();
+        var sequence = await QueryRowBinaryDataAsync($"SELECT id, name, uuid_value, score FROM {tableName} ORDER BY id");
 
-        Assert.Equal(testGuids.Length, rows.Length);
+        for (var i = 0; i < testData.Length; i++)
+        {
+            var id = Int32Type.Instance.ReadValue(ref sequence, out _);
+            var name = StringType.Instance.ReadValue(ref sequence, out _);
+            var uuid = UuidType.Instance.ReadValue(ref sequence, out _);
+            var score = Int32Type.Instance.ReadValue(ref sequence, out _);
+            
+            Assert.Equal(testData[i].id, id);
+            Assert.Equal(testData[i].name, name);
+            Assert.Equal(testData[i].uuid, uuid);
+            Assert.Equal(testData[i].score, score);
+            
+            Output.WriteLine($"Row {id}: {name}, UUID={uuid}, Score={score}");
+        }
 
-        var returnedGuids = rows.Select(row =>
-            new Guid(row.GetProperty("uuid_value").GetString()!)
-        ).ToArray();
-
-        Assert.Equal(testGuids.OrderBy(g => g), returnedGuids.OrderBy(g => g));
-        
-        foreach (var guid in returnedGuids)
-            _output.WriteLine($"Retrieved UUID via JSON: {guid}");
+        await Transport.ExecuteNonQueryAsync($"DROP TABLE {tableName}");
     }
-
-    [Theory]
-    [InlineData(10)]
-    [InlineData(100)]
-    [InlineData(1000)]
-    public async Task BulkUuidOperations_UsingRowBinary_ShouldHandleVariousSizes(int count)
-    {
-        _output.WriteLine($"Testing bulk UUID operations with {count} records using RowBinary");
-        
-        await ExecuteQuery($"DROP TABLE IF EXISTS test_uuid_bulk_{count}");
-        await ExecuteQuery($"""
-                            CREATE TABLE test_uuid_bulk_{count} (
-                                uuid_value UUID
-                            ) ENGINE = Memory
-                            """);
-
-        var testGuids = Enumerable.Range(0, count)
-            .Select(_ => Guid.NewGuid())
-            .ToArray();
-
-        var writer = new ArrayBufferWriter<byte>();
-        UuidType.Instance.WriteValues(writer, testGuids);
-        var binaryData = writer.WrittenSpan.ToArray();
-        
-        _output.WriteLine($"Inserting {count} UUIDs, binary size: {binaryData.Length} bytes");
-
-        var insertResponse = await ExecuteBinaryQuery($"INSERT INTO test_uuid_bulk_{count} FORMAT RowBinary",
-            binaryData);
-        insertResponse.EnsureSuccessStatusCode();
-
-        var selectResponse = await ExecuteQuery($"SELECT uuid_value FROM test_uuid_bulk_{count} FORMAT RowBinary");
-        selectResponse.EnsureSuccessStatusCode();
-        
-        var responseBytes = await selectResponse.Content.ReadAsByteArrayAsync();
-        _output.WriteLine($"Received {responseBytes.Length} bytes from ClickHouse");
-        
-        var sequence = new ReadOnlySequence<byte>(responseBytes);
-        var results = new Guid[count];
-        var itemsRead = UuidType.Instance.ReadValues(ref sequence, results, out var bytesConsumed);
-        
-        Assert.Equal(count, itemsRead);
-        Assert.Equal(count * 16, bytesConsumed);
-        Assert.Equal(0, sequence.Length); // All bytes should be consumed
-        
-        var originalSet = new HashSet<Guid>(testGuids);
-        var resultSet = new HashSet<Guid>(results);
-        Assert.Equal(originalSet, resultSet);
-
-        _output.WriteLine($"Successfully round-tripped {count} UUID records through RowBinary");
-    }
-
-    private async Task<HttpResponseMessage> ExecuteQuery(string query)
-    {
-        return await _httpClient.ExecuteQuery(_fixture.Hostname, _fixture.HttpPort, query);
-    }
-    
-    private async Task<HttpResponseMessage> ExecuteBinaryQuery(string query, byte[] binaryData)
-    {
-        return await _httpClient.ExecuteBinaryQuery(_fixture.Hostname, _fixture.HttpPort, query, binaryData);
-    }
-    public void Dispose() => _httpClient.Dispose();
 }

@@ -1,6 +1,5 @@
 using System.Collections;
 using ClickHouse.Direct.Abstractions;
-using ClickHouse.Direct.Protocol;
 using ClickHouse.Direct.Types;
 
 namespace ClickHouse.Direct.Tests.Protocol;
@@ -120,7 +119,7 @@ public class BlockTests
         {
             ColumnDescriptor.Create("first", ClickHouseTypes.Int32),
             ColumnDescriptor.Create("second", ClickHouseTypes.String),
-            ColumnDescriptor.Create("third", ClickHouseTypes.UUID)
+            ColumnDescriptor.Create("third", ClickHouseTypes.Uuid)
         };
 
         var block = new Block(columns);

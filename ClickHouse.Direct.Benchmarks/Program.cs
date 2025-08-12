@@ -12,6 +12,27 @@ internal class Program
 {
     private static void Main(string[] args)
     {
+        // Check for connection string argument first
+        for (var i = 0; i < args.Length - 1; i++)
+        {
+            if (args[i] != "--connection" && args[i] != "-c")
+                continue;
+
+            Environment.SetEnvironmentVariable("CLICKHOUSE_CONNECTION_STRING", args[i + 1]);
+            args = args.Take(i).Concat(args.Skip(i + 2)).ToArray();
+            break;
+        }
+        
+        // If BenchmarkDotNet's own arguments are passed, use its runner directly
+        // This prevents the discovery output from appearing after benchmark results
+        if (args.Any(arg => arg.StartsWith("--filter") || arg.StartsWith("--list") || 
+                            arg.StartsWith("--join") || arg.StartsWith("--all") ||
+                            arg.StartsWith("--anyCategories") || arg.StartsWith("--allCategories")))
+        {
+            BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
+            return;
+        }
+
         AnsiConsole.Write(
             new FigletText("Benchmarks")
                 .LeftJustified()
@@ -38,15 +59,21 @@ internal class Program
     private static void ShowHelp()
     {
         AnsiConsole.MarkupLine("[yellow]Usage:[/]");
-        AnsiConsole.MarkupLine("  dotnet run                    - Interactive mode");
-        AnsiConsole.MarkupLine("  dotnet run -- --list          - List all benchmarks");
-        AnsiConsole.MarkupLine("  dotnet run -- --all           - Run all benchmarks");
-        AnsiConsole.MarkupLine("  dotnet run -- --filter <text> - Run benchmarks matching filter");
-        AnsiConsole.MarkupLine("  dotnet run -- --class <name>  - Run specific benchmark class");
-        AnsiConsole.MarkupLine("  dotnet run -- --info          - Show system information");
+        AnsiConsole.MarkupLine("  dotnet run                                   - Interactive mode");
+        AnsiConsole.MarkupLine("  dotnet run -- --list                         - List all benchmarks");
+        AnsiConsole.MarkupLine("  dotnet run -- --all                          - Run all benchmarks");
+        AnsiConsole.MarkupLine("  dotnet run -- --filter <text>                - Run benchmarks matching filter");
+        AnsiConsole.MarkupLine("  dotnet run -- --class <name>                 - Run specific benchmark class");
+        AnsiConsole.MarkupLine("  dotnet run -- --info                         - Show system information");
+        AnsiConsole.MarkupLine("  dotnet run -- --connection <string> [args]   - Set ClickHouse connection string");
+        AnsiConsole.MarkupLine("  dotnet run -- -c <string> [args]             - Set ClickHouse connection string (short)");
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[yellow]Examples:[/]");
+        AnsiConsole.MarkupLine("  dotnet run -- --connection \"Host=localhost;Port=9000\" --filter ClickHouseVsDuckDB");
+        AnsiConsole.MarkupLine("  dotnet run -- -c \"Host=myserver;Port=9000;User=admin\" --all");
     }
 
-    private static void RunCommandLine(string[] args)
+    private static void RunCommandLine(IReadOnlyList<string> args)
     {
         var command = args[0].ToLowerInvariant();
         
@@ -58,10 +85,10 @@ internal class Program
             case "--all":
                 RunAllBenchmarks();
                 break;
-            case "--filter" when args.Length > 1:
+            case "--filter" when args.Count > 1:
                 RunFiltered(args[1]);
                 break;
-            case "--class" when args.Length > 1:
+            case "--class" when args.Count > 1:
                 RunClass(args[1]);
                 break;
             case "--info":
@@ -147,11 +174,12 @@ internal class Program
 
             if (benchmark.Parameters.Count > 0)
             {
-                var paramsNode = tree.AddNode($"[blue]Parameters[/]");
+                var paramsNode = tree.AddNode("[blue]Parameters[/]");
                 foreach (var param in benchmark.Parameters)
                 {
                     var values = string.Join(", ", param.Values.Select(v => v?.ToString() ?? "null"));
-                    paramsNode.AddNode($"{param.Name} ({param.Type.Name}): [{values}]");
+                    var escapedValues = values.Replace("[", "[[").Replace("]", "]]");
+                    paramsNode.AddNode($"{param.Name} ({param.Type.Name}): [[{escapedValues}]]");
                 }
             }
 
@@ -280,7 +308,7 @@ internal class Program
 
     private static IConfig AskForConfig()
     {
-        var useDefault = AnsiConsole.Confirm("Use default configuration?", true);
+        var useDefault = AnsiConsole.Confirm("Use default configuration?");
         return useDefault ? DefaultConfig.Instance : BuildCustomConfig();
     }
 
@@ -416,21 +444,21 @@ internal class Program
 
     private class BenchmarkInfo
     {
-        public Type Type { get; set; } = null!;
-        public List<MethodInfo> Methods { get; set; } = new();
-        public List<ParameterInfo> Parameters { get; set; } = new();
+        public Type Type { get; init; } = null!;
+        public List<MethodInfo> Methods { get; init; } = [];
+        public List<ParameterInfo> Parameters { get; init; } = [];
     }
 
     private class MethodInfo
     {
-        public string Name { get; set; } = "";
-        public bool IsBaseline { get; set; }
+        public string Name { get; init; } = "";
+        public bool IsBaseline { get; init; }
     }
 
     private class ParameterInfo
     {
-        public string Name { get; set; } = "";
-        public Type Type { get; set; } = null!;
-        public object?[] Values { get; set; } = Array.Empty<object?>();
+        public string Name { get; init; } = "";
+        public Type Type { get; init; } = null!;
+        public object?[] Values { get; init; } = Array.Empty<object?>();
     }
 }

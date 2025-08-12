@@ -9,6 +9,7 @@ public sealed class DefaultSimdCapabilities : ISimdCapabilities
     private DefaultSimdCapabilities() { }
     
     public bool IsAvx512FSupported => Avx512F.IsSupported;
+    public bool IsAvx512BwSupported => Avx512BW.IsSupported;
     public bool IsAvx2Supported => Avx2.IsSupported;
     public bool IsAvxSupported => Avx.IsSupported;
     public bool IsSse2Supported => Sse2.IsSupported;
